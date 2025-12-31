@@ -1,6 +1,6 @@
 import { supabase } from '../supabaseClient';
-import { DayAvailability, TimeSlot } from '../types';
-import { startOfMonth, endOfMonth, format } from 'date-fns';
+import { DayAvailability } from '../types';
+import { endOfMonth, format } from 'date-fns';
 
 export const checkIsBlacklisted = async (userId: string): Promise<boolean> => {
   if (!userId) return false;
@@ -26,27 +26,34 @@ export const fetchAvailability = async (year: number, month: number): Promise<Da
   const startStr = format(startDate, 'yyyy-MM-dd');
   const endStr = format(endDate, 'yyyy-MM-dd');
 
-  const [bookingsResult, blockedDatesResult] = await Promise.all([
-    supabase.rpc('get_occupied_slots', { 
-        start_date: startStr, 
-        end_date: endStr 
-    }),
-      
-    supabase
-      .from('blocked_dates')
-      .select('blocked_date')
-      .gte('blocked_date', startStr)
-      .lte('blocked_date', endStr)
-  ]);
+  // 1. Fetch configured availability (Whitelist)
+  // Only days present in this table are considered "Open"
+  const availabilityResult = await supabase
+    .from('daily_availability')
+    .select('date, slots')
+    .gte('date', startStr)
+    .lte('date', endStr);
 
+  // 2. Fetch existing confirmed bookings
+  const bookingsResult = await supabase.rpc('get_occupied_slots', { 
+      start_date: startStr, 
+      end_date: endStr 
+  });
+
+  if (availabilityResult.error) console.error('Error fetching availability:', availabilityResult.error);
   if (bookingsResult.error) console.error('Error fetching bookings:', bookingsResult.error);
-  if (blockedDatesResult.error) console.error('Error fetching blocked dates:', blockedDatesResult.error);
 
+  const configuredDays = availabilityResult.data || [];
   const bookings = bookingsResult.data || [];
-  const blockedDates = new Set((blockedDatesResult.data || []).map((b: any) => b.blocked_date));
 
+  // Map configured slots: { "2024-05-20": ["11:00", "15:30"] }
+  const configMap: Record<string, string[]> = {};
+  configuredDays.forEach((d: any) => {
+    configMap[d.date] = d.slots;
+  });
+
+  // Map booked slots: { "2024-05-20": ["11:00"] }
   const bookingsMap: Record<string, string[]> = {};
-  
   bookings.forEach((b: any) => {
     const dateKey = b.booking_date;
     if (!bookingsMap[dateKey]) {
@@ -57,33 +64,38 @@ export const fetchAvailability = async (year: number, month: number): Promise<Da
 
   const daysInMonth = endDate.getDate();
   const result: DayAvailability[] = [];
-  const allSlots: TimeSlot[] = ['11:00', '15:30', '20:00'];
 
   for (let i = 1; i <= daysInMonth; i++) {
     const dateObj = new Date(year, month, i);
     const dateStr = format(dateObj, 'yyyy-MM-dd');
     
-    const isAdminBlocked = blockedDates.has(dateStr);
+    // Default Closed: If not in configMap, it's not available
+    const configuredSlots = configMap[dateStr];
+    
+    if (!configuredSlots || configuredSlots.length === 0) {
+        result.push({
+            date: dateStr,
+            isAvailable: false,
+            bookedCount: 0,
+            availableSlots: [],
+            totalSlots: 0
+        });
+        continue;
+    }
 
     const occupiedSlots = bookingsMap[dateStr] || [];
-    const bookedCount = occupiedSlots.length;
-
-    let availableSlots: TimeSlot[] = allSlots.filter(
+    
+    // Filter out taken slots
+    const availableSlots = configuredSlots.filter(
         slot => !occupiedSlots.includes(slot)
     );
 
-    if (bookedCount >= 2) {
-        availableSlots = [];
-    }
-
-    const isSunday = dateObj.getDay() === 0;
-    const isAvailable = !isSunday && !isAdminBlocked;
-
     result.push({
       date: dateStr,
-      isAvailable: isAvailable, 
-      bookedCount: bookedCount,
-      availableSlots: isAvailable ? availableSlots : [],
+      isAvailable: availableSlots.length > 0, 
+      bookedCount: occupiedSlots.length,
+      availableSlots: availableSlots.sort(), // Sort times for display
+      totalSlots: configuredSlots.length
     });
   }
 
