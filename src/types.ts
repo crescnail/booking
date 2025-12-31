@@ -1,4 +1,4 @@
-export type TimeSlot = '11:00' | '15:30' | '20:00';
+export type TimeSlot = string;
 
 export interface BookingState {
   userId: string;
@@ -13,9 +13,10 @@ export interface BookingState {
 
 export interface DayAvailability {
   date: string; // ISO string YYYY-MM-DD
-  isAvailable: boolean; // Admin open/close
-  bookedCount: number; // Max 2
-  availableSlots: TimeSlot[];
+  isAvailable: boolean; // Has configured slots AND has remaining slots
+  bookedCount: number; // Number of slots already taken
+  availableSlots: TimeSlot[]; // The specific slots remaining for this day
+  totalSlots: number; // Total slots originally configured
 }
 
 export const SERVICES = [
