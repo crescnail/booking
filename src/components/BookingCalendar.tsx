@@ -20,6 +20,7 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
 
   const today = new Date();
   const dayOfMonth = getDate(today);
+  // Rule: Only open next month after 15th (Optional: You can remove this if you want full manual control)
   const showNextMonthAllowed = dayOfMonth >= 15;
   const bookingCutoff = addHours(today, 48); 
   
@@ -75,6 +76,7 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
     if (isDisabled) return;
     
     if (activeDateForSlots && isSameMonth(day, activeDateForSlots) && getDate(day) === getDate(activeDateForSlots)) {
+        // Toggle off if clicking same day? Optional. Keep open for now.
     } else {
         setActiveDateForSlots(day);
         onSelectSlot(day, null as any); 
@@ -97,12 +99,16 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
         hasBookableSlot = dayData.availableSlots.some(slot => checkSlotTime(day, slot));
     }
 
-    const isFull = dayData?.bookedCount >= 2;
-    const isAdminClosed = dayData?.isAvailable === false;
-    const isDisabled = isPast || isFull || isAdminClosed || !dayData || !hasBookableSlot;
+    // New logic: Only disable if no configuration or no remaining valid slots
+    const isConfigured = dayData?.totalSlots > 0;
+    const isDisabled = isPast || !dayData || !isConfigured || !hasBookableSlot;
     
     const isSelected = selectedDate && format(selectedDate, 'yyyy-MM-dd') === dateKey;
     const isActive = activeDateForSlots && format(activeDateForSlots, 'yyyy-MM-dd') === dateKey;
+
+    // Visual indicator for "Fully Booked" vs "Closed"
+    // If isConfigured is true but hasBookableSlot is false => Fully Booked (Red dot?)
+    // For now we keep it simple: gray is disabled.
 
     return (
       <div key={dateKey} className="flex flex-col items-center mb-2 relative">
@@ -135,7 +141,7 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
          <h3 className="text-cresc-800 text-lg font-bold tracking-widest">
             預約日期
          </h3>
-         <p className="text-xs text-cresc-500 mt-1">[ 每月15日更新次月時段 ]</p>
+         <p className="text-xs text-cresc-500 mt-1">[ 請選擇有開放預約的日期 ]</p>
       </div>
 
       <div className="flex items-center justify-between mb-4">
@@ -165,36 +171,38 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
                 {daysInMonth.map(day => renderDay(day))}
             </div>
 
-            <div className={`transition-all duration-300 overflow-hidden ${activeDateForSlots ? 'max-h-40 opacity-100 mt-4 border-t border-cresc-100 pt-4' : 'max-h-0 opacity-0'}`}>
+            <div className={`transition-all duration-300 overflow-hidden ${activeDateForSlots ? 'max-h-56 opacity-100 mt-4 border-t border-cresc-100 pt-4' : 'max-h-0 opacity-0'}`}>
                 {activeDateForSlots && activeDayData && (
                     <div className="text-center animate-in fade-in slide-in-from-top-2">
                         <p className="text-sm text-cresc-600 mb-3 font-medium">
                             {format(activeDateForSlots, 'M月d日')} 可預約時段
                         </p>
-                        <div className="flex justify-center gap-3">
-                            {['11:00', '15:30', '20:00'].map((slot) => {
-                                const isSlotAvailableInData = activeDayData.availableSlots.includes(slot as TimeSlot);
-                                const isSlotTimeValid = checkSlotTime(activeDateForSlots, slot);
-                                const isSlotAvailable = isSlotAvailableInData && isSlotTimeValid;
-
-                                return (
-                                    <button
-                                        key={slot}
-                                        disabled={!isSlotAvailable}
-                                        onClick={() => handleSlotClick(activeDateForSlots, slot as TimeSlot)}
-                                        className={`
-                                            px-4 py-2 text-sm rounded border transition-colors
-                                            ${selectedTime === slot 
-                                                ? 'bg-cresc-600 text-white border-cresc-600' 
-                                                : isSlotAvailable 
-                                                    ? 'border-cresc-200 text-cresc-800 hover:bg-cresc-50 hover:border-cresc-400' 
-                                                    : 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed'}
-                                        `}
-                                    >
-                                        {slot}
-                                    </button>
-                                );
-                            })}
+                        <div className="flex flex-wrap justify-center gap-3">
+                            {activeDayData.availableSlots.length > 0 ? (
+                                activeDayData.availableSlots.map((slot) => {
+                                    const isSlotTimeValid = checkSlotTime(activeDateForSlots, slot);
+                                    
+                                    return (
+                                        <button
+                                            key={slot}
+                                            disabled={!isSlotTimeValid}
+                                            onClick={() => handleSlotClick(activeDateForSlots, slot as TimeSlot)}
+                                            className={`
+                                                px-4 py-2 text-sm rounded border transition-colors
+                                                ${selectedTime === slot 
+                                                    ? 'bg-cresc-600 text-white border-cresc-600' 
+                                                    : isSlotTimeValid
+                                                        ? 'border-cresc-200 text-cresc-800 hover:bg-cresc-50 hover:border-cresc-400' 
+                                                        : 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed hidden'} 
+                                            `}
+                                        >
+                                            {slot}
+                                        </button>
+                                    );
+                                })
+                            ) : (
+                                <p className="text-xs text-gray-400">本日時段已額滿</p>
+                            )}
                         </div>
                     </div>
                 )}
