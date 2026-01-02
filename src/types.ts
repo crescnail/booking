@@ -1,14 +1,25 @@
 export type TimeSlot = string;
 
-export interface BookingState {
-  userId: string;
-  selectedDate: Date | null;
-  selectedTime: TimeSlot | null;
+export interface Customer {
+  user_id: string;
   name: string;
   phone: string;
-  serviceType: string;
-  removeGel: boolean; // true = yes, false = no
-  agreedToTerms: boolean;
+  is_blacklisted: boolean;
+  created_at?: string;
+}
+
+export interface Booking {
+  id: string;
+  user_id: string;
+  booking_date: string; // YYYY-MM-DD
+  booking_time: string;
+  service_type: string;
+  remove_gel: boolean;
+  status: 'confirmed' | 'cancelled' | 'completed';
+  created_at: string;
+  // Snapshot data for UI display if needed, or fetched via join
+  customer_name_snapshot?: string;
+  customer_phone_snapshot?: string;
 }
 
 export interface DayAvailability {
