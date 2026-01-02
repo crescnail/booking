@@ -145,10 +145,10 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
         
         {/* Status Text - Elegant & Minimal */}
         {isRestDay && (
-            <span className="text-[10px] text-gray-300 font-light mt-[-2px] tracking-wider select-none">-</span>
+            <span className="text-xs text-gray-300 font-light mt-[-2px] tracking-wider select-none">-</span>
         )}
         {isFull && (
-            <span className="text-[10px] text-red-300 font-light mt-[-2px] tracking-wider select-none">Fully booked</span>
+            <span className="text-xs text-red-300 font-light mt-[-2px] tracking select-none">Fully booked</span>
         )}
       </div>
     );
