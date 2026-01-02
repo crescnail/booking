@@ -207,7 +207,7 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
                 {activeDateForSlots && activeDayData && (
                     <div className="text-center animate-in fade-in slide-in-from-top-2">
                         <p className="text-sm text-cresc-800 mb-4 font-bold tracking-wider">
-                            {format(activeDateForSlots, 'MM.dd')} TIME SLOTS
+                            {format(activeDateForSlots, 'MM.dd')}  選擇時段
                         </p>
                         <div className="flex flex-wrap justify-center gap-3">
                             {activeDayData.availableSlots.length > 0 ? (
