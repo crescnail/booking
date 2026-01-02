@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { SectionHeader } from './components/SectionHeader';
 import { BookingCalendar } from './components/BookingCalendar';
-import { TimeSlot, SERVICES } from './types';
+import { UserHistory } from './components/UserHistory';
+import { TimeSlot, SERVICES, Booking } from './types';
 import { CREATIVE_WARNING_DATA, MONTHLY_SPECIAL_NOTE, CLASSIC_SPECIAL_NOTE, REMOVAL_NOTE, TERMS_INFO, TERMS_RULES } from './constants';
-import { submitBooking, checkIsBlacklisted } from './services/mockApi';
-import { AlertCircle, Check, ChevronDown, ChevronUp, Loader2, X, Info, FileText } from 'lucide-react';
+import { submitBooking, getCustomerProfile, fetchUserBookings } from './services/mockApi';
+import { AlertCircle, Check, ChevronDown, ChevronUp, Loader2, X, Info, FileText, History, User } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function App() {
@@ -14,6 +15,11 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // User History
+  const [showHistory, setShowHistory] = useState(false);
+  const [userBookings, setUserBookings] = useState<Booking[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Form State
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -31,16 +37,24 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
         const params = new URLSearchParams(window.location.search);
+        // Default guest ID for demo if no param
         const uid = params.get('userId') || 'guest_' + Math.floor(Math.random() * 10000);
         setUserId(uid);
 
         try {
-            const isBlocked = await checkIsBlacklisted(uid);
-            if (isBlocked) {
-                setIsBlacklisted(true);
+            // 1. Check Profile & Blacklist status
+            const profile = await getCustomerProfile(uid);
+            
+            if (profile) {
+                if (profile.is_blacklisted) {
+                    setIsBlacklisted(true);
+                }
+                // Auto-fill form if user exists
+                if (profile.name) setName(profile.name);
+                if (profile.phone) setPhone(profile.phone);
             }
         } catch (error) {
-            console.error("Failed to check blacklist", error);
+            console.error("Failed to check profile", error);
         } finally {
             setLoading(false);
         }
@@ -48,6 +62,20 @@ export default function App() {
 
     init();
   }, []);
+
+  // Fetch history only when requested
+  const handleShowHistory = async () => {
+      if (!showHistory) {
+          setLoadingHistory(true);
+          try {
+              const bookings = await fetchUserBookings(userId);
+              setUserBookings(bookings);
+          } finally {
+              setLoadingHistory(false);
+          }
+      }
+      setShowHistory(!showHistory);
+  };
 
   const handleDateSelect = (date: Date, slot: TimeSlot) => {
     if (!slot) {
@@ -91,6 +119,8 @@ export default function App() {
         await submitBooking(payload);
         setSubmitted(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        // Refresh history silently after submit
+        fetchUserBookings(userId).then(setUserBookings);
     } catch (e) {
         alert("預約失敗，請稍後再試");
     } finally {
@@ -139,6 +169,13 @@ export default function App() {
                     <p><span className="font-bold">時間：</span>{selectedTime}</p>
                     <p><span className="font-bold">項目：</span>{SERVICES.find(s => s.id === serviceType)?.label}</p>
                 </div>
+                
+                <button 
+                   onClick={() => window.location.reload()} 
+                   className="mt-6 text-sm text-cresc-600 underline hover:text-cresc-800"
+                >
+                    返回首頁
+                </button>
             </div>
         </div>
     );
@@ -153,20 +190,19 @@ export default function App() {
 
         {/* Section 1: Intro */}
         <section className="mb-8 px-4">
-          <div className="text-cresc-800 leading-7 font-normal text-sm">
-             歡迎來到 cresc.nail。<br/>
-             工作室採預約制 ㅣ預約前 請詳閱預約須知與規範<br/>
-             我們採一對一的專屬服務，讓您在舒適的環境中享受美甲時光。 <br/>
-             <ul className="mt-4 text-xs text-cresc-600 leading-5">
+          <div className="text-cresc-800 leading-loose font-normal text-sm tracking-wide bg-white/50 p-6 rounded-xl border border-cresc-100/50 backdrop-blur-sm shadow-sm">
+             <p className="mb-4">歡迎來到 cresc.nail。<br/>
+             工作室採預約制 ㅣ預約前 請詳閱預約須知與規範</p>
+             <p className="mb-4">我們採一對一的專屬服務，讓您在舒適的環境中享受美甲時光。</p>
+             <ul className="space-y-1 text-xs text-cresc-600">
              <li>▫️限女性顧客，恕不接待男性</li>
              <li>▫️不開放攜伴、寵物陪伴</li>
              <li>▫️僅提供 手部美甲，無足部、延甲服務</li>
              <li>▫️不接待病甲、皮膚疾病</li>
-             <li>如灰指甲、嚴重指緣炎等，請先尋求醫生治療，如有任何疑問可先傳圖確認。</li>
-            為了讓您有充分的時間準備，預約日將為您保留15分鐘的緩衝時間。
+             <li className="pl-4 text-cresc-400">如灰指甲、嚴重指緣炎等，請先尋求醫生治療，如有任何疑問可先傳圖確認。</li>
              </ul>
+             <p className="mt-4 text-xs font-medium text-cresc-700">為了讓您有充分的時間準備，預約日將為您保留15分鐘的緩衝時間。</p>
           </div>
-          <input type="hidden" name="userId" value={userId} />
         </section>
 
         {/* Section 2: Calendar */}
@@ -361,8 +397,31 @@ export default function App() {
                     </button>
                 </div>
             </div>
-            <div className="h-24"></div>
+            
+            <div className="h-16"></div>
         </div>
+
+        {/* Section 5: My History */}
+        <section className="mb-12 mt-8 border-t border-cresc-100 pt-8">
+            <button 
+                onClick={handleShowHistory}
+                className="w-full flex items-center justify-center gap-2 text-cresc-500 hover:text-cresc-800 transition-colors py-2"
+            >
+                {showHistory ? <ChevronUp size={16}/> : <History size={16} />}
+                <span className="text-sm font-bold tracking-wider">我的預約紀錄</span>
+            </button>
+            
+            <div className={`transition-all duration-500 ease-in-out overflow-hidden ${showHistory ? 'max-h-[800px] opacity-100 mt-6' : 'max-h-0 opacity-0'}`}>
+                <div className="bg-white/50 rounded-xl p-4 border border-cresc-100/50">
+                    <div className="flex items-center gap-2 mb-4 text-xs text-cresc-400 pl-1">
+                        <User size={12} />
+                        <span>用戶 ID: {userId.slice(0, 8)}...</span>
+                        <span className="ml-auto bg-cresc-100 px-2 py-0.5 rounded text-cresc-600">{userBookings.length} 次預約</span>
+                    </div>
+                    <UserHistory bookings={userBookings} loading={loadingHistory} />
+                </div>
+            </div>
+        </section>
 
       </div>
 
