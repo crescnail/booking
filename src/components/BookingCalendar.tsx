@@ -123,9 +123,9 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
           onClick={() => handleDateClick(day, isDisabled)}
           disabled={isDisabled}
           className={`
-            w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300 z-10
+            w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300 z-10 font-brand
             ${(isSelected || isActive) 
-                ? 'bg-cresc-800 text-white shadow-lg scale-105' 
+                ? 'bg-cresc-800 text-white shadow-lg scale-105 ' 
                 : ''}
             ${!isSelected && !isActive && !isDisabled 
                 ? 'hover:bg-cresc-100 text-cresc-900 cursor-pointer hover:shadow-sm' 
@@ -140,7 +140,7 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
         
         {/* Indicators */}
         {isSelected && !isActive && (
-            <div className="w-1 h-1 bg-cresc-800 rounded-full mt-1 animate-pulse"></div>
+            <div className="w-1 h-1 bg-cresc-800 rounded-full mt-1 animate-pulse font-brand"></div>
         )}
         
         {/* Status Text - Elegant & Minimal */}
@@ -160,7 +160,7 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
 
   if (error) {
       return (
-          <div className="w-full max-w-md mx-auto bg-white p-6 rounded-xl shadow-sm border border-red-100 text-center">
+          <div className="w-full max-w-md mx-auto bg-white p-6 rounded-xl shadow-sm border border-red-100 text-center font-brand">
               <AlertTriangle className="mx-auto text-red-400 mb-2" size={24} />
               <p className="text-sm text-gray-500">{error}</p>
           </div>
@@ -180,30 +180,30 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
         <button onClick={handlePrevMonth} disabled={isPrevDisabled} className="p-2 disabled:opacity-20 hover:bg-cresc-50 rounded-full text-cresc-800 transition-colors">
             <ChevronLeft size={20} />
         </button>
-        <span className="text-lg font-serif font-medium text-cresc-900 tracking-wide">
+        <span className="text-lg font-serif font-medium text-cresc-900 tracking-wide font-brand">
             {format(currentViewDate, 'yyyy / MM', { locale: zhTW })}
         </span>
-        <button onClick={handleNextMonth} disabled={isNextDisabled} className="p-2 disabled:opacity-20 hover:bg-cresc-50 rounded-full text-cresc-800 transition-colors">
+        <button onClick={handleNextMonth} disabled={isNextDisabled} className="p-2 disabled:opacity-20 hover:bg-cresc-50 rounded-full text-cresc-800 transition-colors font-brand">
             <ChevronRight size={20} />
         </button>
       </div>
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center text-cresc-400">
+        <div className="h-64 flex items-center justify-center text-cresc-400 font-brand">
             <Loader2 className="animate-spin" />
         </div>
       ) : (
         <>
             <div className="grid grid-cols-7 gap-1 text-center mb-2">
                 {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => (
-                    <div key={d} className="text-[10px] text-cresc-400 font-bold mb-3 tracking-widest">{d}</div>
+                    <div key={d} className="text-[10px] text-cresc-400 font-bold mb-3 tracking-widest font-brand">{d}</div>
                 ))}
                 
                 {emptyDays.map((_, i) => <div key={`empty-${i}`} />)}
                 {daysInMonth.map(day => renderDay(day))}
             </div>
 
-            <div className={`transition-all duration-500 overflow-hidden ease-out ${activeDateForSlots ? 'max-h-64 opacity-100 mt-4 border-t border-cresc-100 pt-6' : 'max-h-0 opacity-0'}`}>
+            <div className={`transition-all duration-500 overflow-hidden ease-out ${activeDateForSlots ? 'max-h-64 opacity-100 mt-4 border-t border-cresc-100 font-brand pt-6' : 'max-h-0 opacity-0'}`}>
                 {activeDateForSlots && activeDayData && (
                     <div className="text-center animate-in fade-in slide-in-from-top-2">
                         <p className="text-sm text-cresc-800 mb-4 font-bold tracking-wider">
@@ -241,10 +241,10 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
             </div>
 
             {!activeDateForSlots && selectedDate && selectedTime && (
-                <div className="mt-4 pt-6 border-t border-cresc-100 text-center animate-in fade-in zoom-in-95 duration-500">
+                <div className="mt-4 pt-6 border-t border-cresc-100 text-center font-brand animate-in fade-in zoom-in-95 duration-500">
                     <div className="inline-flex flex-col items-center gap-1">
-                        <span className="text-[10px] text-cresc-400 tracking-widest uppercase">Selected</span>
-                        <div className="flex items-center gap-2 text-cresc-800 bg-cresc-50 px-4 py-2 rounded border border-cresc-100">
+                        <span className="text-[10px] text-cresc-400 tracking-widest font-brand uppercase">Selected</span>
+                        <div className="flex items-center gap-2 text-cresc-800 font-brand bg-cresc-50 px-4 py-2 rounded border border-cresc-100">
                             <Clock size={14} className="text-cresc-500" />
                             <span className="text-sm font-bold tracking-wide">
                                 {format(selectedDate, 'yyyy-MM-dd')} <span className="mx-1 text-cresc-300">|</span> {selectedTime}
