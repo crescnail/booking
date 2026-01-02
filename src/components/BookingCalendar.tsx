@@ -3,7 +3,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isBefore, 
 import { zhTW } from 'date-fns/locale';
 import { fetchAvailability } from '../services/mockApi';
 import { DayAvailability, TimeSlot } from '../types';
-import { ChevronLeft, ChevronRight, Loader2, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Clock, AlertTriangle } from 'lucide-react';
 
 interface BookingCalendarProps {
   onSelectSlot: (date: Date, slot: TimeSlot) => void;
@@ -15,12 +15,12 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
   const [currentViewDate, setCurrentViewDate] = useState(new Date());
   const [availability, setAvailability] = useState<Record<string, DayAvailability>>({});
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const [activeDateForSlots, setActiveDateForSlots] = useState<Date | null>(null);
 
   const today = new Date();
   const dayOfMonth = getDate(today);
-  // Rule: Only open next month after 15th (Optional: You can remove this if you want full manual control)
   const showNextMonthAllowed = dayOfMonth >= 15;
   const bookingCutoff = addHours(today, 48); 
   
@@ -29,15 +29,21 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+      setError(null);
       const year = currentViewDate.getFullYear();
       const month = currentViewDate.getMonth();
       
-      const data = await fetchAvailability(year, month);
-      const map: Record<string, DayAvailability> = {};
-      data.forEach(d => map[d.date] = d);
-      
-      setAvailability(prev => ({ ...prev, ...map }));
-      setLoading(false);
+      try {
+        const data = await fetchAvailability(year, month);
+        const map: Record<string, DayAvailability> = {};
+        data.forEach(d => map[d.date] = d);
+        setAvailability(prev => ({ ...prev, ...map }));
+      } catch (err: any) {
+        console.error("Failed to load calendar data", err);
+        setError("無法載入排班表，請稍後再試");
+      } finally {
+        setLoading(false);
+      }
     };
     loadData();
   }, [currentViewDate]);
@@ -76,7 +82,8 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
     if (isDisabled) return;
     
     if (activeDateForSlots && isSameMonth(day, activeDateForSlots) && getDate(day) === getDate(activeDateForSlots)) {
-        // Toggle off if clicking same day? Optional. Keep open for now.
+        // Optional: Toggle off if clicking the same day
+        // setActiveDateForSlots(null);
     } else {
         setActiveDateForSlots(day);
         onSelectSlot(day, null as any); 
@@ -94,38 +101,54 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
     
     const isPast = isBefore(day, startOfDay(today));
     
+    // 檢查當天是否還有「未過期」且「未被預約」的時段
     let hasBookableSlot = false;
     if (dayData && dayData.availableSlots) {
         hasBookableSlot = dayData.availableSlots.some(slot => checkSlotTime(day, slot));
     }
 
-    // New logic: Only disable if no configuration or no remaining valid slots
-    const isConfigured = dayData?.totalSlots > 0;
-    const isDisabled = isPast || !dayData || !isConfigured || !hasBookableSlot;
+    // 狀態判定
+    const isConfigured = dayData?.totalSlots > 0; // 資料庫有設定這天
+    const isRestDay = !isPast && !isConfigured;   // 沒設定 = 休
+    const isFull = !isPast && isConfigured && !hasBookableSlot; // 有設定但沒空位 = 滿
+    
+    const isDisabled = isPast || isRestDay || isFull;
     
     const isSelected = selectedDate && format(selectedDate, 'yyyy-MM-dd') === dateKey;
     const isActive = activeDateForSlots && format(activeDateForSlots, 'yyyy-MM-dd') === dateKey;
 
-    // Visual indicator for "Fully Booked" vs "Closed"
-    // If isConfigured is true but hasBookableSlot is false => Fully Booked (Red dot?)
-    // For now we keep it simple: gray is disabled.
-
     return (
-      <div key={dateKey} className="flex flex-col items-center mb-2 relative">
+      <div key={dateKey} className="flex flex-col items-center mb-2 relative h-12 justify-start">
         <button
           onClick={() => handleDateClick(day, isDisabled)}
           disabled={isDisabled}
           className={`
-            w-10 h-10 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-200
-            ${(isSelected || isActive) ? 'bg-cresc-800 text-white shadow-md scale-105' : ''}
-            ${!isSelected && !isActive && !isDisabled ? 'hover:bg-cresc-200 text-cresc-900 cursor-pointer' : ''}
-            ${isDisabled ? 'text-gray-300 cursor-not-allowed' : ''}
+            w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300 z-10
+            ${(isSelected || isActive) 
+                ? 'bg-cresc-800 text-white shadow-lg scale-105' 
+                : ''}
+            ${!isSelected && !isActive && !isDisabled 
+                ? 'hover:bg-cresc-100 text-cresc-900 cursor-pointer hover:shadow-sm' 
+                : ''}
+            ${isDisabled 
+                ? 'text-gray-300 cursor-default bg-transparent' 
+                : ''}
           `}
         >
           {format(day, 'd')}
         </button>
+        
+        {/* Indicators */}
         {isSelected && !isActive && (
-            <div className="w-1 h-1 bg-cresc-800 rounded-full mt-1"></div>
+            <div className="w-1 h-1 bg-cresc-800 rounded-full mt-1 animate-pulse"></div>
+        )}
+        
+        {/* Status Text - Elegant & Minimal */}
+        {isRestDay && (
+            <span className="text-[10px] text-gray-300 font-light mt-[-2px] tracking-wider select-none">休</span>
+        )}
+        {isFull && (
+            <span className="text-[10px] text-red-300 font-light mt-[-2px] tracking-wider select-none">滿</span>
         )}
       </div>
     );
@@ -135,24 +158,33 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
   const activeDayKey = activeDateForSlots ? format(activeDateForSlots, 'yyyy-MM-dd') : null;
   const activeDayData = activeDayKey ? availability[activeDayKey] : null;
 
+  if (error) {
+      return (
+          <div className="w-full max-w-md mx-auto bg-white p-6 rounded-xl shadow-sm border border-red-100 text-center">
+              <AlertTriangle className="mx-auto text-red-400 mb-2" size={24} />
+              <p className="text-sm text-gray-500">{error}</p>
+          </div>
+      );
+  }
+
   return (
     <div className="w-full max-w-md mx-auto bg-white p-6 rounded-xl shadow-sm border border-cresc-100">
       <div className="text-center mb-6">
-         <h3 className="text-cresc-800 text-lg font-bold tracking-widest">
-            預約日期
+         <h3 className="text-cresc-800 text-lg font-bold tracking-[0.1em] font-brand italic">
+            DATE SELECTION
          </h3>
-         <p className="text-xs text-cresc-500 mt-1">[ 請選擇有開放預約的日期 ]</p>
+         <div className="w-8 h-0.5 bg-cresc-100 mx-auto mt-2 rounded-full"></div>
       </div>
 
-      <div className="flex items-center justify-between mb-4">
-        <button onClick={handlePrevMonth} disabled={isPrevDisabled} className="p-1 disabled:opacity-30 hover:bg-cresc-50 rounded-full text-cresc-800">
-            <ChevronLeft size={24} />
+      <div className="flex items-center justify-between mb-6 px-2">
+        <button onClick={handlePrevMonth} disabled={isPrevDisabled} className="p-2 disabled:opacity-20 hover:bg-cresc-50 rounded-full text-cresc-800 transition-colors">
+            <ChevronLeft size={20} />
         </button>
-        <span className="text-lg font-serif font-medium text-cresc-900">
-            {format(currentViewDate, 'yyyy年 M月', { locale: zhTW })}
+        <span className="text-lg font-serif font-medium text-cresc-900 tracking-wide">
+            {format(currentViewDate, 'yyyy / MM', { locale: zhTW })}
         </span>
-        <button onClick={handleNextMonth} disabled={isNextDisabled} className="p-1 disabled:opacity-30 hover:bg-cresc-50 rounded-full text-cresc-800">
-            <ChevronRight size={24} />
+        <button onClick={handleNextMonth} disabled={isNextDisabled} className="p-2 disabled:opacity-20 hover:bg-cresc-50 rounded-full text-cresc-800 transition-colors">
+            <ChevronRight size={20} />
         </button>
       </div>
 
@@ -162,20 +194,20 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
         </div>
       ) : (
         <>
-            <div className="grid grid-cols-7 gap-1 text-center mb-4">
-                {['日', '一', '二', '三', '四', '五', '六'].map(d => (
-                    <div key={d} className="text-xs text-cresc-400 font-bold mb-2">{d}</div>
+            <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => (
+                    <div key={d} className="text-[10px] text-cresc-400 font-bold mb-3 tracking-widest">{d}</div>
                 ))}
                 
                 {emptyDays.map((_, i) => <div key={`empty-${i}`} />)}
                 {daysInMonth.map(day => renderDay(day))}
             </div>
 
-            <div className={`transition-all duration-300 overflow-hidden ${activeDateForSlots ? 'max-h-56 opacity-100 mt-4 border-t border-cresc-100 pt-4' : 'max-h-0 opacity-0'}`}>
+            <div className={`transition-all duration-500 overflow-hidden ease-out ${activeDateForSlots ? 'max-h-64 opacity-100 mt-4 border-t border-cresc-100 pt-6' : 'max-h-0 opacity-0'}`}>
                 {activeDateForSlots && activeDayData && (
                     <div className="text-center animate-in fade-in slide-in-from-top-2">
-                        <p className="text-sm text-cresc-600 mb-3 font-medium">
-                            {format(activeDateForSlots, 'M月d日')} 可預約時段
+                        <p className="text-sm text-cresc-800 mb-4 font-bold tracking-wider">
+                            {format(activeDateForSlots, 'MM.dd')} TIME SLOTS
                         </p>
                         <div className="flex flex-wrap justify-center gap-3">
                             {activeDayData.availableSlots.length > 0 ? (
@@ -188,12 +220,12 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
                                             disabled={!isSlotTimeValid}
                                             onClick={() => handleSlotClick(activeDateForSlots, slot as TimeSlot)}
                                             className={`
-                                                px-4 py-2 text-sm rounded border transition-colors
+                                                px-5 py-2 text-sm rounded transition-all duration-300
                                                 ${selectedTime === slot 
-                                                    ? 'bg-cresc-600 text-white border-cresc-600' 
+                                                    ? 'bg-cresc-800 text-white shadow-md transform scale-105' 
                                                     : isSlotTimeValid
-                                                        ? 'border-cresc-200 text-cresc-800 hover:bg-cresc-50 hover:border-cresc-400' 
-                                                        : 'bg-gray-50 text-gray-300 border-transparent cursor-not-allowed hidden'} 
+                                                        ? 'border border-cresc-200 text-cresc-800 hover:bg-cresc-50 hover:border-cresc-400 bg-white' 
+                                                        : 'hidden'} 
                                             `}
                                         >
                                             {slot}
@@ -201,7 +233,7 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
                                     );
                                 })
                             ) : (
-                                <p className="text-xs text-gray-400">本日時段已額滿</p>
+                                <p className="text-xs text-gray-400 italic">No slots available</p>
                             )}
                         </div>
                     </div>
@@ -209,12 +241,15 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ onSelectSlot, 
             </div>
 
             {!activeDateForSlots && selectedDate && selectedTime && (
-                <div className="mt-4 pt-4 border-t border-cresc-100 text-center animate-in fade-in zoom-in-95">
-                    <div className="inline-flex items-center gap-2 bg-cresc-50 px-4 py-2 rounded-lg text-cresc-800 border border-cresc-200">
-                        <Clock size={16} />
-                        <span className="text-sm font-bold tracking-wide">
-                            已選擇：{format(selectedDate, 'yyyy-MM-dd')} {selectedTime}
-                        </span>
+                <div className="mt-4 pt-6 border-t border-cresc-100 text-center animate-in fade-in zoom-in-95 duration-500">
+                    <div className="inline-flex flex-col items-center gap-1">
+                        <span className="text-[10px] text-cresc-400 tracking-widest uppercase">Selected</span>
+                        <div className="flex items-center gap-2 text-cresc-800 bg-cresc-50 px-4 py-2 rounded border border-cresc-100">
+                            <Clock size={14} className="text-cresc-500" />
+                            <span className="text-sm font-bold tracking-wide">
+                                {format(selectedDate, 'yyyy-MM-dd')} <span className="mx-1 text-cresc-300">|</span> {selectedTime}
+                            </span>
+                        </div>
                     </div>
                 </div>
             )}
