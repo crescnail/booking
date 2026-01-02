@@ -8,7 +8,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Arsenal:ital,wght@0,400;0,700;1,400;1,700&family=Noto+Serif+TC:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Added Arsenal SC for Favicon -->
+    <link href="https://fonts.googleapis.com/css2?family=Arsenal:ital,wght@0,400;0,700;1,400;1,700&family=Arsenal+SC:ital,wght@1,400&family=Noto+Serif+TC:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FAVICON (Dynamic SVG) -->
+    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><style>@import url("https://fonts.googleapis.com/css2?family=Arsenal+SC:ital,wght@1,400");</style><rect width="128" height="128" rx="48" fill="oklch(70.5%25 0.015 286.067)" /><text x="50%" y="52%" font-family="&quot;Arsenal SC&quot;, serif" font-style="italic" font-size="80" fill="white" text-anchor="middle" dominant-baseline="middle">C.</text></svg>' />
+
     <script>
       tailwind.config = {
         theme: {
@@ -45,16 +50,17 @@
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "date-fns": "https://esm.sh/date-fns@^4.1.0",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0",
-    "date-fns/": "https://esm.sh/date-fns@^4.1.0/"
+    "date-fns/": "https://esm.sh/date-fns@^4.1.0/",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "path": "https://esm.sh/path@^0.12.7"
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
   <body class="bg-cresc-50 text-cresc-900 font-serif antialiased selection:bg-cresc-200">
     <div id="root"></div>
     <!-- Vite Entry Point pointing to src folder -->
     <script type="module" src="/src/main.tsx"></script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  </body>
 </html>
