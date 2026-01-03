@@ -51,6 +51,7 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
         let uid = '';
+        let displayName = '';
 
         // 1. Try Initialize LIFF
         if (window.liff) {
@@ -59,8 +60,9 @@ export default function App() {
                 if (window.liff.isLoggedIn()) {
                     const profile = await window.liff.getProfile();
                     uid = profile.userId;
-                    setLineDisplayName(profile.displayName); // Save Display Name
-                    console.log("LIFF Login Success:", uid, profile.displayName);
+                    displayName = profile.displayName;
+                    setLineDisplayName(displayName);
+                    console.log("LIFF Login Success:", uid, displayName);
                 } else if (window.liff.isInClient()) {
                     // Force login if inside LINE app but somehow not logged in
                     await window.liff.login();
@@ -70,43 +72,54 @@ export default function App() {
             }
         }
 
-        // 2. Fallback to URL Query Parameter (for testing or external browser)
+        // 2. Fallback to URL Query Parameter
         if (!uid) {
             const params = new URLSearchParams(window.location.search);
             uid = params.get('userId') || '';
         }
         
+        // 3. Fallback to Session Storage (Persistent ID for Browser Testing)
         if (!uid) {
-            // Fallback for direct browser access without LINE param
-            console.warn("No userId found via LIFF or URL.");
-            setUserId('guest_temp_' + Math.floor(Math.random() * 1000));
-            setMemberCode('GUEST'); 
-            setLoading(false);
-            return;
+            const storedId = sessionStorage.getItem('cresc_user_id');
+            if (storedId) {
+                uid = storedId;
+            } else {
+                // Generate a mock LINE ID (starts with U) to satisfy format requirements
+                const randomHex = Array.from({length: 30}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                uid = `U${randomHex}`; // e.g. U1a2b3c...
+                sessionStorage.setItem('cresc_user_id', uid);
+                console.log("Generated New Session ID:", uid);
+            }
         }
 
         setUserId(uid);
 
         try {
-            // 3. Check Profile from DB
+            // 4. Check Profile from DB
             const profile = await getCustomerProfile(uid);
             
             if (profile) {
-                // 舊客：使用資料庫中的會員編號
+                // 舊客：使用資料庫中的會員編號與姓名
                 setIsReturningUser(true);
-                setMemberCode(profile.member_code || generateNewMemberCode()); // 如果舊資料沒編號，補一個
+                setMemberCode(profile.member_code || generateNewMemberCode());
                 
                 if (profile.is_blacklisted) {
                     setIsBlacklisted(true);
                 }
-                // Auto-fill form
+                // Auto-fill form from DB
                 if (profile.name) setName(profile.name);
                 if (profile.phone) setPhone(profile.phone);
             } else {
-                // 新客：生成一個新的會員編號，並在稍後送出時存入
+                // 新客
                 setIsReturningUser(false);
                 setMemberCode(generateNewMemberCode());
-                setName('');
+                
+                // Auto-fill form with LINE Name if available
+                if (displayName) {
+                    setName(displayName);
+                } else {
+                    setName('');
+                }
                 setPhone('');
             }
         } catch (error) {
@@ -163,20 +176,21 @@ export default function App() {
     
     const payload = {
         userId,
-        memberCode, // Pass the code (either fetched or newly generated) to backend
+        memberCode,
         date: format(selectedDate!, 'yyyy-MM-dd'),
         time: selectedTime,
-        name,
+        name, // This will be LINE name if user didn't change it
         phone,
         serviceType,
         removeGel,
+        lineDisplayName, // Pass this to API as well just in case
     };
 
     try {
         await submitBooking(payload);
         setSubmitted(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        // Refresh history silently after submit
+        // Refresh history
         fetchUserBookings(userId).then(setUserBookings);
     } catch (e) {
         alert("預約失敗，請稍後再試");
@@ -495,16 +509,15 @@ export default function App() {
             <div className={`transition-all duration-500 ease-in-out overflow-hidden ${showHistory ? 'max-h-[800px] opacity-100 mt-6' : 'max-h-0 opacity-0'}`}>
                 <div className="bg-white/50 rounded-xl p-4 border border-cresc-100/50">
                     <div className="flex items-center gap-2 mb-4 text-xs text-cresc-400 pl-1">
-                        {lineDisplayName ? (
-                            <>
+                        <div className="flex items-center gap-1.5 bg-cresc-100/50 px-2 py-1 rounded">
+                            <span className="font-mono font-bold text-cresc-600">NO. {memberCode}</span>
+                        </div>
+                        {lineDisplayName && (
+                            <div className="flex items-center gap-1">
+                                <span className="text-cresc-300">|</span>
                                 <User size={12} />
-                                <span>LINE: {lineDisplayName}</span>
-                            </>
-                        ) : (
-                            <>
-                                <User size={12} />
-                                <span>用戶 ID: {userId.slice(0, 8)}...</span>
-                            </>
+                                <span>{lineDisplayName}</span>
+                            </div>
                         )}
                         <span className="ml-auto bg-cresc-100 px-2 py-0.5 rounded text-cresc-600">{userBookings.length} 次預約</span>
                     </div>
