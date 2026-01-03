@@ -232,14 +232,14 @@ export default function App() {
                     <Check className="text-cresc-600" size={32} />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 mb-2">預約成功</h2>
-                <p className="text-gray-600 mb-6">
+                <p className="text-gray-600 mb-6 left">
                     感謝您的預約，我們已發送確認訊息至您的 LINE。
                 </p>
                 <div className="text-left bg-cresc-50 p-4 rounded-lg text-sm text-cresc-900 space-y-2">
                     <p><span className="font-bold">日期：</span>{selectedDate && format(selectedDate, 'yyyy-MM-dd')}</p>
                     <p><span className="font-bold">時間：</span>{selectedTime}</p>
+                    <p><span className="font-bold">姓名：</span><span className="font-mono text-cresc-600">{name}</span></p>
                     <p><span className="font-bold">項目：</span>{SERVICES.find(s => s.id === serviceType)?.label}</p>
-                    <p><span className="font-bold">會員編號：</span><span className="font-mono text-cresc-600">{memberCode}</span></p>
                 </div>
                 
                 <button 
