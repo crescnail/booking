@@ -5,13 +5,16 @@ import { UserHistory } from './components/UserHistory';
 import { TimeSlot, SERVICES, Booking } from './types';
 import { CREATIVE_WARNING_DATA, MONTHLY_SPECIAL_NOTE, CLASSIC_SPECIAL_NOTE, REMOVAL_NOTE, TERMS_INFO, TERMS_RULES } from './constants';
 import { submitBooking, getCustomerProfile, fetchUserBookings } from './services/mockApi';
-import { AlertCircle, Check, ChevronDown, ChevronUp, Loader2, X, Info, FileText, History, User } from 'lucide-react';
+import { AlertCircle, Check, ChevronDown, ChevronUp, Loader2, X, Info, FileText, History, User, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string>('');
+  const [memberCode, setMemberCode] = useState<string>(''); // 顯示用的會員編號
+  
   const [isBlacklisted, setIsBlacklisted] = useState(false);
+  const [isReturningUser, setIsReturningUser] = useState(false); 
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -34,24 +37,56 @@ export default function App() {
   const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
+  // Helper to generate a random 4-char code for new users
+  const generateNewMemberCode = () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Remove confusing I, 1, O, 0
+      let result = '';
+      for (let i = 0; i < 4; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return `CN-${result}`;
+  };
+
   useEffect(() => {
     const init = async () => {
         const params = new URLSearchParams(window.location.search);
-        // Default guest ID for demo if no param
-        const uid = params.get('userId') || 'guest_' + Math.floor(Math.random() * 10000);
+        // CRITICAL: We strictly rely on the URL parameter from LINE
+        const uid = params.get('userId'); 
+        
+        if (!uid) {
+            // Fallback for direct browser access without LINE param (optional: show error)
+            console.warn("No userId in URL. Use a guest ID for display only.");
+            // 這裡為了不讓頁面掛掉，我們還是一個暫時的 Guest ID，
+            // 但實務上您應該引導用戶「請從 LINE 選單點擊進入」
+            setUserId('guest_temp_' + Math.floor(Math.random() * 1000));
+            setMemberCode('GUEST'); 
+            setLoading(false);
+            return;
+        }
+
         setUserId(uid);
 
         try {
-            // 1. Check Profile & Blacklist status
+            // 1. Check Profile from DB
             const profile = await getCustomerProfile(uid);
             
             if (profile) {
+                // 舊客：使用資料庫中的會員編號
+                setIsReturningUser(true);
+                setMemberCode(profile.member_code || generateNewMemberCode()); // 如果舊資料沒編號，補一個
+                
                 if (profile.is_blacklisted) {
                     setIsBlacklisted(true);
                 }
-                // Auto-fill form if user exists
+                // Auto-fill form
                 if (profile.name) setName(profile.name);
                 if (profile.phone) setPhone(profile.phone);
+            } else {
+                // 新客：生成一個新的會員編號，並在稍後送出時存入
+                setIsReturningUser(false);
+                setMemberCode(generateNewMemberCode());
+                setName('');
+                setPhone('');
             }
         } catch (error) {
             console.error("Failed to check profile", error);
@@ -107,6 +142,7 @@ export default function App() {
     
     const payload = {
         userId,
+        memberCode, // Pass the code (either fetched or newly generated) to backend
         date: format(selectedDate!, 'yyyy-MM-dd'),
         time: selectedTime,
         name,
@@ -168,6 +204,7 @@ export default function App() {
                     <p><span className="font-bold">日期：</span>{selectedDate && format(selectedDate, 'yyyy-MM-dd')}</p>
                     <p><span className="font-bold">時間：</span>{selectedTime}</p>
                     <p><span className="font-bold">項目：</span>{SERVICES.find(s => s.id === serviceType)?.label}</p>
+                    <p><span className="font-bold">會員編號：</span><span className="font-mono text-cresc-600">{memberCode}</span></p>
                 </div>
                 
                 <button 
@@ -187,6 +224,29 @@ export default function App() {
     <div className="min-h-screen bg-cresc-50 pb-20 relative">
       <div className="max-w-2xl mx-auto px-4">
         <SectionHeader />
+
+        {/* User Identity Indicator (Sync Status) */}
+        <div className="flex justify-center mb-6 animate-in fade-in slide-in-from-top-2 duration-500">
+            <div className={`px-4 py-1.5 rounded-full text-xs font-medium flex items-center gap-2 border shadow-sm
+                ${isReturningUser 
+                    ? 'bg-white text-cresc-700 border-cresc-200' 
+                    : 'bg-cresc-100/50 text-cresc-600 border-transparent'}
+            `}>
+                {isReturningUser ? (
+                    <>
+                        <Sparkles size={12} className="text-cresc-500" />
+                        <span>歡迎回來，{name || '貴賓'}</span>
+                    </>
+                ) : (
+                    <>
+                        <User size={12} className="opacity-50" />
+                        <span>Hello, New Friend</span>
+                    </>
+                )}
+                <span className="w-px h-3 bg-cresc-300 mx-1"></span>
+                <span className="font-mono text-cresc-500">NO. {memberCode}</span>
+            </div>
+        </div>
 
         {/* Section 1: Intro */}
         <section className="mb-8 px-4">
@@ -455,6 +515,10 @@ export default function App() {
                             <span className="text-cresc-500">項目</span>
                             <span className="font-bold">{SERVICES.find(s => s.id === serviceType)?.label}</span>
                         </div>
+                        <div className="flex justify-between border-b border-cresc-100 pb-2">
+                            <span className="text-cresc-500">會員編號</span>
+                            <span className="font-bold font-mono text-cresc-700">{memberCode}</span>
+                        </div>
                         <div className="flex justify-between pb-1">
                             <span className="text-cresc-500">卸甲</span>
                             <span className="font-bold">{removeGel ? '是' : '否'}</span>
@@ -485,11 +549,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Dev Helper */}
-      <div className="fixed top-2 right-2 opacity-50 hover:opacity-100 transition-opacity z-10">
-        <button onClick={() => window.location.href = '?userId=blocked_user_123'} className="text-[10px] bg-red-100 p-1 rounded mr-1">Simulate Blocked</button>
-        <button onClick={() => window.location.href = '?userId=user_' + Math.floor(Math.random()*999)} className="text-[10px] bg-green-100 p-1 rounded">Simulate New User</button>
-      </div>
+      {/* Dev Helper removed */}
     </div>
   );
 }
