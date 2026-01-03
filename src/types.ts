@@ -5,6 +5,7 @@ export interface Customer {
   name: string;
   phone: string;
   is_blacklisted: boolean;
+  member_code?: string; // 新增會員編號 (例如: CN-1A2B)
   created_at?: string;
 }
 
