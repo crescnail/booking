@@ -52,61 +52,70 @@ export default function App() {
     const init = async () => {
         let uid = '';
         let displayName = '';
+        let isLiffInitialized = false;
 
-        // 1. Try Initialize LIFF
+        // 1. LIFF Initialization & Login Flow
         if (window.liff) {
             try {
                 await window.liff.init({ liffId: LIFF_ID });
-                if (window.liff.isLoggedIn()) {
-                    const profile = await window.liff.getProfile();
-                    uid = profile.userId;
-                    displayName = profile.displayName;
-                    setLineDisplayName(displayName);
-                    console.log("LIFF Login Success:", uid, displayName);
-                } else if (window.liff.isInClient()) {
-                    // Force login if inside LINE app but somehow not logged in
-                    await window.liff.login();
+                isLiffInitialized = true;
+
+                if (!window.liff.isLoggedIn()) {
+                    // 如果沒登入，強制登入 (會跳轉頁面)
+                    // 設定 redirectUri 為當前頁面，確保登入後跳回來
+                    window.liff.login({ redirectUri: window.location.href });
+                    return; // 暫停執行，等待跳轉
                 }
+
+                // 已登入：取得真實 Profile
+                const profile = await window.liff.getProfile();
+                uid = profile.userId;
+                displayName = profile.displayName;
+                setLineDisplayName(displayName);
+                
+                console.log("LIFF Login Success. Real LINE ID:", uid);
+
             } catch (error) {
-                console.warn("LIFF Init failed (normal if not in LINE):", error);
+                // 通常發生在 Localhost 沒開 HTTPS，或是 LIFF ID 設定錯誤
+                console.warn("LIFF Init failed. Falling back to dev mode.", error);
             }
         }
 
-        // 2. Fallback to URL Query Parameter
+        // 2. Dev/Fallback Mode (Only if LIFF failed to get ID)
         if (!uid) {
+             // 嘗試從 URL 抓取 (有些開發流程會手動帶入)
             const params = new URLSearchParams(window.location.search);
             uid = params.get('userId') || '';
-        }
-        
-        // 3. Fallback to Session Storage (Persistent ID for Browser Testing)
-        if (!uid) {
-            const storedId = sessionStorage.getItem('cresc_user_id');
-            if (storedId) {
-                uid = storedId;
-            } else {
-                // Generate a mock LINE ID (starts with U) to satisfy format requirements
-                const randomHex = Array.from({length: 30}, () => Math.floor(Math.random() * 16).toString(16)).join('');
-                uid = `U${randomHex}`; // e.g. U1a2b3c...
-                sessionStorage.setItem('cresc_user_id', uid);
-                console.log("Generated New Session ID:", uid);
+
+            if (!uid) {
+                // 最後手段：使用 SessionStorage 的 Mock ID (為了讓開發者在 localhost 也能看到畫面)
+                const storedId = sessionStorage.getItem('cresc_user_id');
+                if (storedId) {
+                    uid = storedId;
+                } else {
+                    const randomHex = Array.from({length: 30}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                    uid = `U${randomHex}`; 
+                    sessionStorage.setItem('cresc_user_id', uid);
+                    console.log("Using Mock Session ID (Dev Mode):", uid);
+                }
             }
         }
 
         setUserId(uid);
 
+        // 3. Fetch User Profile from DB (Sync with Supabase)
         try {
-            // 4. Check Profile from DB
             const profile = await getCustomerProfile(uid);
             
             if (profile) {
-                // 舊客：使用資料庫中的會員編號與姓名
+                // 舊客
                 setIsReturningUser(true);
                 setMemberCode(profile.member_code || generateNewMemberCode());
                 
                 if (profile.is_blacklisted) {
                     setIsBlacklisted(true);
                 }
-                // Auto-fill form from DB
+                // DB 有資料就用 DB 的 (可能用戶改過名字)
                 if (profile.name) setName(profile.name);
                 if (profile.phone) setPhone(profile.phone);
             } else {
@@ -114,11 +123,9 @@ export default function App() {
                 setIsReturningUser(false);
                 setMemberCode(generateNewMemberCode());
                 
-                // Auto-fill form with LINE Name if available
+                // 自動帶入 LINE 暱稱
                 if (displayName) {
                     setName(displayName);
-                } else {
-                    setName('');
                 }
                 setPhone('');
             }
@@ -558,10 +565,10 @@ export default function App() {
                             <span className="text-cresc-500">項目</span>
                             <span className="font-bold">{SERVICES.find(s => s.id === serviceType)?.label}</span>
                         </div>
-                        {/* <div className="flex justify-between border-b border-cresc-100 pb-2">
-                            <span className="text-cresc-500">會員編號</span>
-                            <span className="font-bold font-mono text-cresc-700">{memberCode}</span>
-                        </div> */}
+                        // <div className="flex justify-between border-b border-cresc-100 pb-2">
+                        //     <span className="text-cresc-500">會員編號</span>
+                        //     <span className="font-bold font-mono text-cresc-700">{memberCode}</span>
+                        // </div>
                         <div className="flex justify-between pb-1">
                             <span className="text-cresc-500">卸甲</span>
                             <span className="font-bold">{removeGel ? '是' : '否'}</span>
