@@ -49,61 +49,72 @@ export default function App() {
   };
 
   useEffect(() => {
-    const init = async () => {
-        let uid = '';
-        let displayName = '';
-        let isLiffInitialized = false;
-
-        // 1. LIFF Initialization & Login Flow
-        if (window.liff) {
-            try {
-                await window.liff.init({ liffId: LIFF_ID });
-                isLiffInitialized = true;
-
-                if (!window.liff.isLoggedIn()) {
-                    // 如果沒登入，強制登入 (會跳轉頁面)
-                    // 設定 redirectUri 為當前頁面，確保登入後跳回來
-                    window.liff.login({ redirectUri: window.location.href });
-                    return; // 暫停執行，等待跳轉
-                }
-
-                // 已登入：取得真實 Profile
-                const profile = await window.liff.getProfile();
-                uid = profile.userId;
-                displayName = profile.displayName;
-                setLineDisplayName(displayName);
-                
-                console.log("LIFF Login Success. Real LINE ID:", uid);
-
-            } catch (error) {
-                // 通常發生在 Localhost 沒開 HTTPS，或是 LIFF ID 設定錯誤
-                console.warn("LIFF Init failed. Falling back to dev mode.", error);
+    const initLiff = async () => {
+        try {
+            // 1. 初始化 LIFF
+            await window.liff.init({ liffId: LIFF_ID });
+            
+            // 2. 檢查是否登入
+            if (!window.liff.isLoggedIn()) {
+                // 未登入 -> 跳轉至 LINE 登入頁面
+                // 設定 redirectUri 確保登入後回到當前頁面
+                window.liff.login({ redirectUri: window.location.href });
+                return;
             }
-        }
 
-        // 2. Dev/Fallback Mode (Only if LIFF failed to get ID)
+            // 3. 已登入 -> 獲取真實 User ID
+            // 優先使用 getProfile，這會返回標準的 User ID (Uc...)
+            const profile = await window.liff.getProfile();
+            const realUserId = profile.userId;
+            const displayName = profile.displayName;
+
+            console.log("LIFF Profile User ID:", realUserId); // 這裡應該是 Uc0... 格式
+            
+            // 雙重確認：有時候 context 會有額外資訊，但 profile.userId 是最準確的 'user' 類型 ID
+            const context = window.liff.getContext();
+            if (context) {
+                console.log("LIFF Context:", context);
+                // context.userId 應與 profile.userId 相同
+            }
+
+            setUserId(realUserId);
+            setLineDisplayName(displayName);
+
+            // 4. 用真實 ID 去後端查資料
+            await fetchAndSetUserProfile(realUserId, displayName);
+
+        } catch (error) {
+            console.error("LIFF Initialization failed:", error);
+            // 錯誤處理：如果是開發環境 (localhost) 且沒有 HTTPS，liff.init 可能失敗
+            // 為了不讓畫面卡住，這裡提供一個開發用的 fallback，但在正式環境應避免
+            handleDevFallback();
+        }
+    };
+
+    const handleDevFallback = async () => {
+        // 嘗試從 URL 參數獲取 (模擬)
+        const params = new URLSearchParams(window.location.search);
+        let uid = params.get('userId');
+
         if (!uid) {
-             // 嘗試從 URL 抓取 (有些開發流程會手動帶入)
-            const params = new URLSearchParams(window.location.search);
-            uid = params.get('userId') || '';
-
-            if (!uid) {
-                // 最後手段：使用 SessionStorage 的 Mock ID (為了讓開發者在 localhost 也能看到畫面)
-                const storedId = sessionStorage.getItem('cresc_user_id');
-                if (storedId) {
-                    uid = storedId;
-                } else {
-                    const randomHex = Array.from({length: 30}, () => Math.floor(Math.random() * 16).toString(16)).join('');
-                    uid = `U${randomHex}`; 
-                    sessionStorage.setItem('cresc_user_id', uid);
-                    console.log("Using Mock Session ID (Dev Mode):", uid);
-                }
+            // 開發測試用：如果完全抓不到 ID，使用 SessionStorage 暫存
+            // 注意：這會導致 ID 浮動 (Floating ID)，僅限開發使用
+            const storedId = sessionStorage.getItem('cresc_dev_user_id');
+            if (storedId) {
+                uid = storedId;
+            } else {
+                console.warn("Generating RANDOM ID (Dev Mode Only). History will not be saved correctly.");
+                const randomHex = Array.from({length: 30}, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                uid = `U${randomHex}`; // 模擬 U 開頭格式
+                sessionStorage.setItem('cresc_dev_user_id', uid);
             }
         }
-
+        
         setUserId(uid);
+        await fetchAndSetUserProfile(uid, '');
+    };
 
-        // 3. Fetch User Profile from DB (Sync with Supabase)
+    const fetchAndSetUserProfile = async (uid: string, displayName: string) => {
         try {
             const profile = await getCustomerProfile(uid);
             
@@ -111,32 +122,29 @@ export default function App() {
                 // 舊客
                 setIsReturningUser(true);
                 setMemberCode(profile.member_code || generateNewMemberCode());
-                
-                if (profile.is_blacklisted) {
-                    setIsBlacklisted(true);
-                }
-                // DB 有資料就用 DB 的 (可能用戶改過名字)
+                if (profile.is_blacklisted) setIsBlacklisted(true);
                 if (profile.name) setName(profile.name);
                 if (profile.phone) setPhone(profile.phone);
             } else {
                 // 新客
                 setIsReturningUser(false);
                 setMemberCode(generateNewMemberCode());
-                
-                // 自動帶入 LINE 暱稱
-                if (displayName) {
-                    setName(displayName);
-                }
+                if (displayName) setName(displayName);
                 setPhone('');
             }
         } catch (error) {
-            console.error("Failed to check profile", error);
+            console.error("Failed to fetch user profile", error);
         } finally {
             setLoading(false);
         }
     };
 
-    init();
+    if (window.liff) {
+        initLiff();
+    } else {
+        // 如果 LIFF SDK 沒載入 (例如網路問題)，走 Fallback
+        handleDevFallback();
+    }
   }, []);
 
   // Fetch history only when requested
@@ -211,6 +219,7 @@ export default function App() {
         <div className="min-h-screen flex flex-col items-center justify-center bg-cresc-50 text-cresc-800">
             <SectionHeader />
             <Loader2 className="animate-spin mt-4" size={32} />
+            <p className="mt-4 text-xs text-cresc-400">正在確認身份...</p>
         </div>
     );
   }
@@ -277,7 +286,7 @@ export default function App() {
                 {isReturningUser ? (
                     <>
                         <Sparkles size={12} className="text-cresc-500" />
-                        <span>歡迎回來，{name || '貴賓'}</span>
+                        <span>歡迎回來 {name || ''}</span>
                     </>
                 ) : (
                     <>
@@ -565,10 +574,6 @@ export default function App() {
                             <span className="text-cresc-500">項目</span>
                             <span className="font-bold">{SERVICES.find(s => s.id === serviceType)?.label}</span>
                         </div>
-                        {/* <div className="flex justify-between border-b border-cresc-100 pb-2">
-                            <span className="text-cresc-500">會員編號</span>
-                            <span className="font-bold font-mono text-cresc-700">{memberCode}</span>
-                         </div> */}
                         <div className="flex justify-between pb-1">
                             <span className="text-cresc-500">卸甲</span>
                             <span className="font-bold">{removeGel ? '是' : '否'}</span>
