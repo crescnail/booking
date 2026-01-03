@@ -3,7 +3,7 @@ import { DayAvailability, Booking, Customer } from '../types';
 import { endOfMonth, format } from 'date-fns';
 
 /**
- * 1. 檢查顧客狀態 (包含是否為黑名單)
+ * 1. 檢查顧客狀態 (包含是否為黑名單、會員編號)
  */
 export const getCustomerProfile = async (userId: string): Promise<Customer | null> => {
   if (!userId) return null;
@@ -113,14 +113,33 @@ export const submitBooking = async (data: any) => {
     console.log("Submitting booking...", data);
     
     // Step A: Upsert Customer (建立或更新顧客資料)
-    // 這樣可以確保顧客資料庫永遠是最新的，且不會重複建立
-    const customerPayload = {
+    // 我們需要確保如果這個用戶已經有 member_code，不要覆蓋掉它
+    // 如果是新用戶，則使用前端傳來的 newMemberCode (或是在後端生成，這裡簡化為使用 payload 內的)
+    
+    const customerPayload: any = {
         user_id: data.userId,
         name: data.name,
         phone: data.phone,
         updated_at: new Date().toISOString()
-        // is_blacklisted 預設為 false，這裡不更新它以免覆蓋 Admin 的設定
     };
+
+    // 只有當傳入 data 有 memberCode 時才嘗試更新 (通常是新客)
+    // 舊客如果已經有 member_code， Supabase upsert 預設行為：如果欄位沒在 payload 裡，通常不會動它？
+    // 不，Supabase upsert 會覆蓋。所以我們必須確保：
+    // 如果是舊客，data.memberCode 應該要帶原本的。
+    // 如果是新客，data.memberCode 是新生成的。
+    if (data.memberCode) {
+        customerPayload.member_code = data.memberCode;
+    }
+
+    // 為了安全起見，我們可以先忽略 member_code 的更新，除非我們確定它是空的
+    // 但為了簡化流程，我們假設 App 端已經邏輯判斷好：
+    // "如果是舊客，memberCode 帶的是舊的；如果是新客，帶的是新的"
+    
+    // 改用 select 檢查是否存在比較保險，但為了效能，我們直接 upsert
+    // 這裡我們做一個優化：使用 Supabase 的特性，如果不想覆蓋某些欄位，可能需要先查再寫，
+    // 但因為 mockApi 的邏輯是 App 已經先查過了 (getCustomerProfile)，
+    // 所以我們信任 App 傳來的 memberCode 是正確的 (舊客傳舊的，新客傳新的)。
 
     const { error: customerError } = await supabase
         .from('customers')
