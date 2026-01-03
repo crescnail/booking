@@ -1,5 +1,12 @@
 export type TimeSlot = string;
 
+// Extend Window interface for LINE LIFF
+declare global {
+  interface Window {
+    liff: any;
+  }
+}
+
 export interface Customer {
   user_id: string;
   name: string;
