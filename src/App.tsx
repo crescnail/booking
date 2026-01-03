@@ -3,7 +3,7 @@ import { SectionHeader } from './components/SectionHeader';
 import { BookingCalendar } from './components/BookingCalendar';
 import { UserHistory } from './components/UserHistory';
 import { TimeSlot, SERVICES, Booking } from './types';
-import { CREATIVE_WARNING_DATA, MONTHLY_SPECIAL_NOTE, CLASSIC_SPECIAL_NOTE, REMOVAL_NOTE, TERMS_INFO, TERMS_RULES } from './constants';
+import { CREATIVE_WARNING_DATA, MONTHLY_SPECIAL_NOTE, CLASSIC_SPECIAL_NOTE, REMOVAL_NOTE, TERMS_INFO, TERMS_RULES, LIFF_ID } from './constants';
 import { submitBooking, getCustomerProfile, fetchUserBookings } from './services/mockApi';
 import { AlertCircle, Check, ChevronDown, ChevronUp, Loader2, X, Info, FileText, History, User, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
@@ -12,6 +12,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string>('');
   const [memberCode, setMemberCode] = useState<string>(''); // 顯示用的會員編號
+  const [lineDisplayName, setLineDisplayName] = useState<string>(''); // LINE 暱稱
   
   const [isBlacklisted, setIsBlacklisted] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false); 
@@ -49,15 +50,35 @@ export default function App() {
 
   useEffect(() => {
     const init = async () => {
-        const params = new URLSearchParams(window.location.search);
-        // CRITICAL: We strictly rely on the URL parameter from LINE
-        const uid = params.get('userId'); 
+        let uid = '';
+
+        // 1. Try Initialize LIFF
+        if (window.liff) {
+            try {
+                await window.liff.init({ liffId: LIFF_ID });
+                if (window.liff.isLoggedIn()) {
+                    const profile = await window.liff.getProfile();
+                    uid = profile.userId;
+                    setLineDisplayName(profile.displayName); // Save Display Name
+                    console.log("LIFF Login Success:", uid, profile.displayName);
+                } else if (window.liff.isInClient()) {
+                    // Force login if inside LINE app but somehow not logged in
+                    await window.liff.login();
+                }
+            } catch (error) {
+                console.warn("LIFF Init failed (normal if not in LINE):", error);
+            }
+        }
+
+        // 2. Fallback to URL Query Parameter (for testing or external browser)
+        if (!uid) {
+            const params = new URLSearchParams(window.location.search);
+            uid = params.get('userId') || '';
+        }
         
         if (!uid) {
-            // Fallback for direct browser access without LINE param (optional: show error)
-            console.warn("No userId in URL. Use a guest ID for display only.");
-            // 這裡為了不讓頁面掛掉，我們還是一個暫時的 Guest ID，
-            // 但實務上您應該引導用戶「請從 LINE 選單點擊進入」
+            // Fallback for direct browser access without LINE param
+            console.warn("No userId found via LIFF or URL.");
             setUserId('guest_temp_' + Math.floor(Math.random() * 1000));
             setMemberCode('GUEST'); 
             setLoading(false);
@@ -67,7 +88,7 @@ export default function App() {
         setUserId(uid);
 
         try {
-            // 1. Check Profile from DB
+            // 3. Check Profile from DB
             const profile = await getCustomerProfile(uid);
             
             if (profile) {
@@ -240,7 +261,7 @@ export default function App() {
                 ) : (
                     <>
                         <User size={12} className="opacity-50" />
-                        <span>Hello, New Friend</span>
+                        <span>{lineDisplayName ? `Hi, ${lineDisplayName}` : 'Hello, New Friend'}</span>
                     </>
                 )}
                 <span className="w-px h-3 bg-cresc-300 mx-1"></span>
@@ -474,8 +495,17 @@ export default function App() {
             <div className={`transition-all duration-500 ease-in-out overflow-hidden ${showHistory ? 'max-h-[800px] opacity-100 mt-6' : 'max-h-0 opacity-0'}`}>
                 <div className="bg-white/50 rounded-xl p-4 border border-cresc-100/50">
                     <div className="flex items-center gap-2 mb-4 text-xs text-cresc-400 pl-1">
-                        <User size={12} />
-                        <span>用戶 ID: {userId.slice(0, 8)}...</span>
+                        {lineDisplayName ? (
+                            <>
+                                <User size={12} />
+                                <span>LINE: {lineDisplayName}</span>
+                            </>
+                        ) : (
+                            <>
+                                <User size={12} />
+                                <span>用戶 ID: {userId.slice(0, 8)}...</span>
+                            </>
+                        )}
                         <span className="ml-auto bg-cresc-100 px-2 py-0.5 rounded text-cresc-600">{userBookings.length} 次預約</span>
                     </div>
                     <UserHistory bookings={userBookings} loading={loadingHistory} />
