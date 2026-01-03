@@ -565,10 +565,10 @@ export default function App() {
                             <span className="text-cresc-500">項目</span>
                             <span className="font-bold">{SERVICES.find(s => s.id === serviceType)?.label}</span>
                         </div>
-                        // <div className="flex justify-between border-b border-cresc-100 pb-2">
-                        //     <span className="text-cresc-500">會員編號</span>
-                        //     <span className="font-bold font-mono text-cresc-700">{memberCode}</span>
-                        // </div>
+                        {/* <div className="flex justify-between border-b border-cresc-100 pb-2">
+                            <span className="text-cresc-500">會員編號</span>
+                            <span className="font-bold font-mono text-cresc-700">{memberCode}</span>
+                         </div> */}
                         <div className="flex justify-between pb-1">
                             <span className="text-cresc-500">卸甲</span>
                             <span className="font-bold">{removeGel ? '是' : '否'}</span>
