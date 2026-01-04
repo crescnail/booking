@@ -3,8 +3,9 @@ import { SectionHeader } from './components/SectionHeader';
 import { BookingCalendar } from './components/BookingCalendar';
 import { UserHistory } from './components/UserHistory';
 import { TimeSlot, SERVICES, Booking } from './types';
-import { CREATIVE_WARNING_DATA, MONTHLY_SPECIAL_NOTE, CLASSIC_SPECIAL_NOTE, REMOVAL_NOTE, TERMS_INFO, TERMS_RULES, LIFF_ID } from './constants';
-import { submitBooking, getCustomerProfile, fetchUserBookings } from './services/mockApi';
+import { CREATIVE_WARNING_DATA, MONTHLY_SPECIAL_NOTE, CLASSIC_SPECIAL_NOTE, REMOVAL_NOTE, TERMS_INFO, TERMS_RULES } from './constants';
+import { submitBooking, getCustomerProfile, fetchUserBookings, verifyLineLogin } from './services/mockApi';
+import { initLiff } from './services/liff';
 import { AlertCircle, Check, ChevronDown, ChevronUp, Loader2, X, Info, FileText, History, User, Sparkles } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -49,44 +50,46 @@ export default function App() {
   };
 
   useEffect(() => {
-    const initLiff = async () => {
+    const initializeApp = async () => {
         try {
             // 1. 初始化 LIFF
-            await window.liff.init({ liffId: LIFF_ID });
+            // initLiff 內部會處理 login redirect，若未登入會回傳 null
+            const profile = await initLiff();
             
-            // 2. 檢查是否登入
-            if (!window.liff.isLoggedIn()) {
-                // 未登入 -> 跳轉至 LINE 登入頁面
-                // 設定 redirectUri 確保登入後回到當前頁面
-                window.liff.login({ redirectUri: window.location.href });
-                return;
-            }
+            // 如果回傳 null，代表正在重導向登入頁面，不做後續處理
+            if (!profile) return;
 
-            // 3. 已登入 -> 獲取真實 User ID
-            // 優先使用 getProfile，這會返回標準的 User ID (Uc...)
-            const profile = await window.liff.getProfile();
-            const realUserId = profile.userId;
+            let realUserId = profile.userId;
             const displayName = profile.displayName;
 
-            console.log("LIFF Profile User ID:", realUserId); // 這裡應該是 Uc0... 格式
-            
-            // 雙重確認：有時候 context 會有額外資訊，但 profile.userId 是最準確的 'user' 類型 ID
-            const context = window.liff.getContext();
-            if (context) {
-                console.log("LIFF Context:", context);
-                // context.userId 應與 profile.userId 相同
+            // 2. 嘗試取得 idToken 並進行後端驗證 (最安全的方式)
+            const idToken = window.liff.getIDToken();
+            if (idToken) {
+                try {
+                    console.log("Verifying token with backend...");
+                    const verifiedId = await verifyLineLogin(idToken);
+                    if (verifiedId) {
+                        realUserId = verifiedId;
+                        console.log("Backend verification successful. User ID:", realUserId);
+                    }
+                } catch (verifyError) {
+                    console.warn("Backend verification failed, falling back to LIFF profile ID.", verifyError);
+                    // 驗證失敗時 (例如 Edge Function 沒設好)，暫時使用原本的 profile.userId
+                    // 在正式環境建議這裡要嚴格處理
+                }
+            } else {
+                 console.warn("No ID Token found.");
             }
-
+            
             setUserId(realUserId);
             setLineDisplayName(displayName);
 
-            // 4. 用真實 ID 去後端查資料
+            // 3. 用真實 ID 去後端查資料 (確認是 新朋友 or 舊客)
             await fetchAndSetUserProfile(realUserId, displayName);
 
         } catch (error) {
-            console.error("LIFF Initialization failed:", error);
+            console.error("LIFF Init Failed, falling back to Dev mode:", error);
             // 錯誤處理：如果是開發環境 (localhost) 且沒有 HTTPS，liff.init 可能失敗
-            // 為了不讓畫面卡住，這裡提供一個開發用的 fallback，但在正式環境應避免
             handleDevFallback();
         }
     };
@@ -98,7 +101,6 @@ export default function App() {
 
         if (!uid) {
             // 開發測試用：如果完全抓不到 ID，使用 SessionStorage 暫存
-            // 注意：這會導致 ID 浮動 (Floating ID)，僅限開發使用
             const storedId = sessionStorage.getItem('cresc_dev_user_id');
             if (storedId) {
                 uid = storedId;
@@ -119,14 +121,18 @@ export default function App() {
             const profile = await getCustomerProfile(uid);
             
             if (profile) {
-                // 舊客
+                // [舊客]
                 setIsReturningUser(true);
                 setMemberCode(profile.member_code || generateNewMemberCode());
                 if (profile.is_blacklisted) setIsBlacklisted(true);
                 if (profile.name) setName(profile.name);
                 if (profile.phone) setPhone(profile.phone);
+                
+                // 自動抓取歷史紀錄，不用等 User 點擊
+                loadHistory(uid);
+                
             } else {
-                // 新客
+                // [新客]
                 setIsReturningUser(false);
                 setMemberCode(generateNewMemberCode());
                 if (displayName) setName(displayName);
@@ -140,23 +146,26 @@ export default function App() {
     };
 
     if (window.liff) {
-        initLiff();
+        initializeApp();
     } else {
         // 如果 LIFF SDK 沒載入 (例如網路問題)，走 Fallback
         handleDevFallback();
     }
   }, []);
 
-  // Fetch history only when requested
-  const handleShowHistory = async () => {
-      if (!showHistory) {
-          setLoadingHistory(true);
-          try {
-              const bookings = await fetchUserBookings(userId);
-              setUserBookings(bookings);
-          } finally {
-              setLoadingHistory(false);
-          }
+  const loadHistory = async (uid: string) => {
+      setLoadingHistory(true);
+      try {
+          const bookings = await fetchUserBookings(uid);
+          setUserBookings(bookings);
+      } finally {
+          setLoadingHistory(false);
+      }
+  };
+
+  const toggleHistory = () => {
+      if (!showHistory && userBookings.length === 0) {
+          loadHistory(userId);
       }
       setShowHistory(!showHistory);
   };
@@ -205,8 +214,9 @@ export default function App() {
         await submitBooking(payload);
         setSubmitted(true);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        // Refresh history
-        fetchUserBookings(userId).then(setUserBookings);
+        // 預約成功後，重新抓取歷史紀錄，確保 User 看到最新的在最上面
+        await loadHistory(userId);
+        // 如果原本歷史紀錄是收合的，可以考慮打開，或保持收合 (這裡保持現狀，但資料已更新)
     } catch (e) {
         alert("預約失敗，請稍後再試");
     } finally {
@@ -286,12 +296,12 @@ export default function App() {
                 {isReturningUser ? (
                     <>
                         <Sparkles size={12} className="text-cresc-500" />
-                        <span>歡迎回來 {name || ''}</span>
+                        <span>歡迎回來，{name || '貴賓'}</span>
                     </>
                 ) : (
                     <>
                         <User size={12} className="opacity-50" />
-                        <span>{lineDisplayName ? `Hi, ${lineDisplayName}` : 'Hello, New Friend'}</span>
+                        <span>{lineDisplayName ? `Hello, New Friend` : 'Hello, New Friend'}</span>
                     </>
                 )}
                 <span className="w-px h-3 bg-cresc-300 mx-1"></span>
@@ -515,7 +525,7 @@ export default function App() {
         {/* Section 5: My History */}
         <section className="mb-12 mt-8 border-t border-cresc-100 pt-8">
             <button 
-                onClick={handleShowHistory}
+                onClick={toggleHistory}
                 className="w-full flex items-center justify-center gap-2 text-cresc-500 hover:text-cresc-800 transition-colors py-2"
             >
                 {showHistory ? <ChevronUp size={16}/> : <History size={16} />}
