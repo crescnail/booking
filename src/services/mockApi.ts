@@ -1,6 +1,32 @@
 import { supabase } from '../supabaseClient';
-import { DayAvailability, Booking, Customer } from '../types';
+import { DayAvailability, Booking, Customer, SERVICES } from '../types';
 import { endOfMonth, format } from 'date-fns';
+import { N8N_WEBHOOK_URL } from '../constants';
+
+/**
+ * 0. 呼叫 Supabase Edge Function 驗證 LINE Token
+ */
+export const verifyLineLogin = async (idToken: string): Promise<string> => {
+  try {
+    const { data, error } = await supabase.functions.invoke('line-auth', {
+      body: { idToken },
+    });
+
+    if (error) {
+      console.error('Supabase Edge Function Error:', error);
+      throw error;
+    }
+
+    if (!data || !data.userId) {
+      throw new Error('Invalid response from auth function');
+    }
+
+    return data.userId;
+  } catch (err) {
+    console.error('Verify Line Token Failed:', err);
+    throw err;
+  }
+};
 
 /**
  * 1. 檢查顧客狀態 (包含是否為黑名單、會員編號)
@@ -107,15 +133,12 @@ export const fetchAvailability = async (year: number, month: number): Promise<Da
 };
 
 /**
- * 3. 提交預約 (包含建立/更新顧客資料)
+ * 3. 提交預約 (包含建立/更新顧客資料 -> 寫入資料庫 -> 觸發 n8n)
  */
 export const submitBooking = async (data: any) => {
     console.log("Submitting booking...", data);
     
     // Step A: Upsert Customer (建立或更新顧客資料)
-    // 我們需要確保如果這個用戶已經有 member_code，不要覆蓋掉它
-    // 如果是新用戶，則使用前端傳來的 newMemberCode (或是在後端生成，這裡簡化為使用 payload 內的)
-    
     const customerPayload: any = {
         user_id: data.userId,
         name: data.name,
@@ -123,23 +146,9 @@ export const submitBooking = async (data: any) => {
         updated_at: new Date().toISOString()
     };
 
-    // 只有當傳入 data 有 memberCode 時才嘗試更新 (通常是新客)
-    // 舊客如果已經有 member_code， Supabase upsert 預設行為：如果欄位沒在 payload 裡，通常不會動它？
-    // 不，Supabase upsert 會覆蓋。所以我們必須確保：
-    // 如果是舊客，data.memberCode 應該要帶原本的。
-    // 如果是新客，data.memberCode 是新生成的。
     if (data.memberCode) {
         customerPayload.member_code = data.memberCode;
     }
-
-    // 為了安全起見，我們可以先忽略 member_code 的更新，除非我們確定它是空的
-    // 但為了簡化流程，我們假設 App 端已經邏輯判斷好：
-    // "如果是舊客，memberCode 帶的是舊的；如果是新客，帶的是新的"
-    
-    // 改用 select 檢查是否存在比較保險，但為了效能，我們直接 upsert
-    // 這裡我們做一個優化：使用 Supabase 的特性，如果不想覆蓋某些欄位，可能需要先查再寫，
-    // 但因為 mockApi 的邏輯是 App 已經先查過了 (getCustomerProfile)，
-    // 所以我們信任 App 傳來的 memberCode 是正確的 (舊客傳舊的，新客傳新的)。
 
     const { error: customerError } = await supabase
         .from('customers')
@@ -150,7 +159,7 @@ export const submitBooking = async (data: any) => {
         throw new Error('無法建立顧客資料');
     }
 
-    // Step B: Insert Booking
+    // Step B: Insert Booking into Supabase
     const bookingPayload = {
         user_id: data.userId,
         customer_name_snapshot: data.name,
@@ -159,7 +168,8 @@ export const submitBooking = async (data: any) => {
         booking_date: data.date,
         booking_time: data.time,
         remove_gel: data.removeGel,
-        status: 'confirmed'
+        status: 'confirmed',
+        modification_count: 0 // 新預約預設為 0
     };
 
     const { error: bookingError } = await supabase
@@ -169,6 +179,34 @@ export const submitBooking = async (data: any) => {
     if (bookingError) {
         console.error('Submission error:', bookingError);
         throw bookingError;
+    }
+
+    // Step C: Trigger n8n Webhook (Send Flex Message)
+    if (N8N_WEBHOOK_URL) {
+        try {
+            // 轉換 service id 為中文標籤，方便 n8n 直接顯示
+            const serviceLabel = SERVICES.find(s => s.id === data.serviceType)?.label || data.serviceType;
+            
+            const n8nPayload = {
+                ...bookingPayload,
+                service_label: serviceLabel,
+                member_code: data.memberCode,
+                // 傳送額外需要的資訊給 Flex Message
+                line_display_name: data.lineDisplayName || data.name
+            };
+
+            // 使用 fetch 發送 (Fire and forget，我們不需要等待 n8n 回應才顯示成功)
+            fetch(N8N_WEBHOOK_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(n8nPayload),
+            }).catch(err => console.error("n8n trigger failed (background):", err));
+            
+        } catch (e) {
+            console.warn("Failed to prepare n8n payload", e);
+        }
     }
     
     return { success: true };
