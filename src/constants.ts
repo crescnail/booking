@@ -1,8 +1,13 @@
 export const BLACKLISTED_IDS = []; // Moved to Supabase DB
 
 // LINE LIFF ID
-// 注意：如果這只是 Channel ID，請替換成完整的 LIFF URL ID (例如: 2008813394-AbCdEfGh)
-export const LIFF_ID = "2008813394"; 
+// 請將此處替換為您從 LINE Developers Console 取得的 LIFF ID
+export const LIFF_ID: string = import.meta.env.VITE_LINE_CHANNEL_ID || ""; 
+
+// n8n Webhook URL
+// 從環境變數讀取 (.env 檔案中的 VITE_N8N_WEBHOOK_URL)
+// 這樣可以避免將 URL 直接寫死在程式碼中上傳到儲存庫
+export const N8N_WEBHOOK_URL = import.meta.env.VITE_N8N_WEBHOOK_URL || ""; 
 
 export const CREATIVE_WARNING_DATA = {
   intro: "我們相信美好的創作源於信任與共鳴。在預約此服務前，請務必參考我們的作品集，確認風格符合您的期待後再預約。",
